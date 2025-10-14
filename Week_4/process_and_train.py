@@ -21,7 +21,7 @@ from sklearn.metrics import accuracy_score, mean_squared_error
 # ===============================
 
 # 讀 XML 檔案
-xml_file = "Week_4/O-A0038-003.xml"
+xml_file = "O-A0038-003.xml"
 tree = ET.parse(xml_file)
 root = tree.getroot()
 
@@ -109,28 +109,60 @@ print("Regression RMSE:", rmse)
 # ===============================
 # 6. 畫圖：資料分布與預測
 # ===============================
-# 原始溫度熱圖
+# 對整個經緯度網格做預測
+grid_points = np.column_stack((lon_grid.flatten(), lat_grid.flatten()))
+grid_pred = cls_model.predict(grid_points).reshape(lon_grid.shape)
+
 plt.figure(figsize=(10,6))
-plt.imshow(grid_data, origin='lower', extent=[lons[0], lons[-1], lats[0], lats[-1]], cmap='coolwarm')
-plt.colorbar(label='Temperature (°C)')
-plt.title('Original Temperature Grid')
+# 用 contourf 畫有效/無效區域
+plt.contourf(lon_grid, lat_grid, grid_pred, levels=[-0.5,0.5,1.5], colors=['lightgray','skyblue'], alpha=0.5)
+# 可以疊加測試集的散點
+plt.scatter(X_cls_test[:,0], X_cls_test[:,1], c=y_cls_test, cmap='bwr', s=20, edgecolor='k', alpha=0.7)
+plt.title('Classification Boundary (0=invalid, 1=valid)')
 plt.xlabel('Longitude')
 plt.ylabel('Latitude')
+plt.axis("equal")
 plt.show()
 
-# 分類資料散點圖
-plt.figure(figsize=(10,6))
-plt.scatter(X_cls_test[:,0], X_cls_test[:,1], c=y_cls_pred, cmap='bwr', s=20)
-plt.title('Classification Prediction (0=invalid, 1=valid)')
-plt.xlabel('Longitude')
-plt.ylabel('Latitude')
-plt.show()
+# ===============================
+# 6.2 用回歸模型畫預測熱圖
+# ===============================
+# 對整個網格做預測
+masked_reg_pred = np.full_like(grid_data, np.nan)  # 先填 nan
+mask = grid_data != -999
+masked_reg_pred[mask] = reg_model.predict(np.column_stack((lon_grid[mask], lat_grid[mask])))
 
-# 回歸資料預測散點圖
+
 plt.figure(figsize=(10,6))
-plt.scatter(X_reg_test[:,0], X_reg_test[:,1], c=y_reg_pred, cmap='coolwarm', s=20)
+plt.imshow(masked_reg_pred, origin='lower', extent=[lons[0], lons[-1], lats[0], lats[-1]],
+           cmap='coolwarm')
 plt.colorbar(label='Predicted Temperature (°C)')
-plt.title('Regression Prediction')
+plt.title('Regression Prediction (masked invalid values)')
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+plt.show()
+
+# ===============================
+# 6.3 結合分類與回歸：h(x)
+# ===============================
+# 對整個網格做分類預測
+C_pred = cls_model.predict(grid_points).reshape(lon_grid.shape)  # 0=無效, 1=有效
+
+# 對有效點做回歸預測
+R_pred = np.full_like(grid_data, -999, dtype=float)  # 預設無效值為 -999
+mask_valid = C_pred == 1
+R_pred[mask_valid] = reg_model.predict(np.column_stack((lon_grid[mask_valid], lat_grid[mask_valid])))
+
+h_grid = R_pred  # h(x)
+
+# 畫圖
+plt.figure(figsize=(10,6))
+# 使用 cmap='coolwarm'，無效值 -999 可以用 nan 轉透明
+masked_h_grid = np.where(h_grid==-999, np.nan, h_grid)
+plt.imshow(masked_h_grid, origin='lower', extent=[lons[0], lons[-1], lats[0], lats[-1]],
+           cmap='coolwarm')
+plt.colorbar(label='Predicted Temperature h(x) (°C)')
+plt.title('Combined Model Prediction h(x) = R(x) if C(x)=1 else -999')
 plt.xlabel('Longitude')
 plt.ylabel('Latitude')
 plt.show()
